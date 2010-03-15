@@ -372,6 +372,9 @@ DO $$ system("/nonesuch"); $$ LANGUAGE plperl;
 DO $$ qx("/nonesuch"); $$ LANGUAGE plperl;
 DO $$ open my $fh, "</nonesuch"; $$ LANGUAGE plperl;
 
+-- check that eval is allowed and eval'd restricted ops are caught
+DO $$ eval q{chdir '.'}; warn "Caught: $@"; $$ LANGUAGE plperl;
+
 -- check that we can't "use" a module that's not been loaded already
 -- compile-time error: "Unable to load blib.pm into plperl"
 DO $$ use blib; $$ LANGUAGE plperl;
