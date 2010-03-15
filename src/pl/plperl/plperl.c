@@ -563,7 +563,6 @@ plperl_init_interp(void)
 
 	/* initialize */
 	SV *funcs_rvhv = eval_pv(PLC_PERLBOOT, TRUE);
-	sv_dump(funcs_rvhv);
 	hv_iterinit(SvRV(funcs_rvhv));
 	SV		   *val;
 	char	   *key;
@@ -699,25 +698,7 @@ plperl_trusted_init(void)
 
 	safe_version_sv = eval_pv(SAFE_MODULE, FALSE);		/* TRUE = croak if
 														 * failure */
-	safe_version_x100 = (int) (SvNV(safe_version_sv) * 100);
-
-	/*
-	 * Reject too-old versions of Safe and some others: 2.20:
-	 * http://rt.perl.org/rt3/Ticket/Display.html?id=72068 2.21:
-	 * http://rt.perl.org/rt3/Ticket/Display.html?id=72700
-	 */
-	if (safe_version_x100 < 209 || safe_version_x100 == 220 ||
-		safe_version_x100 == 221)
-	{
-		/* not safe, so disallow all trusted funcs */
-		eval_pv(PLC_SAFE_BAD, FALSE);
-		if (SvTRUE(ERRSV))
-			ereport(ERROR,
-					(errmsg("%s", strip_trailing_ws(SvPV_nolen(ERRSV))),
-					 errcontext("While executing PLC_SAFE_BAD.")));
-	}
-	else
-	{
+	if(1) {
 		eval_pv(PLC_SAFE_OK, FALSE);
 		if (SvTRUE(ERRSV))
 			ereport(ERROR,

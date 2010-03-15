@@ -39,14 +39,6 @@ sub mkfuncsrc {
 	return qq[ package main; undef *{'$name'}; *{'$name'} = sub { $BEGIN $prolog $src } ];
 }
 
-# see also mksafefunc() in plc_safe_ok.pl
-sub mkunsafefunc {
-	no strict; # default to no strict for the eval
-	my $ret = eval(mkfuncsrc(@_));
-	$@ =~ s/\(eval \d+\) //g if $@;
-	return $ret;
-}
-
 sub ::encode_array_literal {
 	my ($arg, $delim) = @_;
 	return $arg
@@ -80,7 +72,28 @@ sub ::encode_array_constructor {
 	return "ARRAY[$res]";
 }
 
+# return a hash of private code refs that plperl code won't have access to
 return {
-#	mkfuncsrc	 => \&mkfuncsrc,
-	mkfunc => \&mkunsafefunc,
+	mkfunc => sub {
+
+		my $mkfuncsrc = sub {
+			my ($name, $imports, $prolog, $src) = @_;
+
+			my $BEGIN = join "\n", map {
+				my $names = $imports->{$_} || [];
+				"$_->import(qw(@$names));"
+			} sort keys %$imports;
+			$BEGIN &&= "BEGIN { $BEGIN }";
+
+			$name =~ s/\\/\\\\/g;
+			$name =~ s/::|'/_/g; # avoid package delimiters
+
+			return qq[ package main; undef *{'$name'}; *{'$name'} = sub { $BEGIN $prolog $src } ];
+		};
+
+		no strict; # default to no strict for the eval
+		my $ret = eval($mkfuncsrc->(@_));
+		$@ =~ s/\(eval \d+\) //g if $@;
+		return $ret;
+	},
 };
