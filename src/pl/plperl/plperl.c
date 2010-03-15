@@ -299,7 +299,6 @@ _PG_init(void)
 									&hash_ctl,
 									HASH_ELEM);
 
-
 	plperl_held_interp = plperl_init_interp();
 	interp_state = INTERP_HELD;
 
@@ -341,9 +340,6 @@ plperl_fini(int code, Datum arg)
 	elog(DEBUG3, "plperl_fini: done");
 }
 
-
-#define SAFE_MODULE \
-	"require Safe; $Safe::VERSION"
 
 /********************************************************************
  *
@@ -703,45 +699,32 @@ plperl_destroy_interp(PerlInterpreter **interp)
 static void
 plperl_trusted_init(void)
 {
-	SV		   *safe_version_sv;
-	IV			safe_version_x100;
-
-	safe_version_sv = eval_pv(SAFE_MODULE, FALSE);		/* TRUE = croak if
-														 * failure */
-	if(1) {
-		eval_pv(PLC_SAFE_OK, FALSE);
+	if (GetDatabaseEncoding() == PG_UTF8)
+	{
+		/*
+		 * Force loading of utf8 module now to prevent errors that can
+		 * arise from the regex code later trying to load utf8 modules.
+		 * See http://rt.perl.org/rt3/Ticket/Display.html?id=47576
+		 */
+		eval_pv("my $a=chr(0x100); return $a =~ /\\xa9/i", FALSE);
 		if (SvTRUE(ERRSV))
 			ereport(ERROR,
 					(errmsg("%s", strip_trailing_ws(SvPV_nolen(ERRSV))),
-					 errcontext("While executing PLC_SAFE_OK.")));
+						errcontext("While executing utf8fix.")));
+	}
 
-		if (GetDatabaseEncoding() == PG_UTF8)
-		{
-			/*
-			 * Force loading of utf8 module now to prevent errors that can
-			 * arise from the regex code later trying to load utf8 modules.
-			 * See http://rt.perl.org/rt3/Ticket/Display.html?id=47576
-			 */
-			eval_pv("my $a=chr(0x100); return $a =~ /\\xa9/i", FALSE);
-			if (SvTRUE(ERRSV))
-				ereport(ERROR,
-						(errmsg("%s", strip_trailing_ws(SvPV_nolen(ERRSV))),
-						 errcontext("While executing utf8fix.")));
-		}
+	/* switch to the safe require opcode */
+	PL_ppaddr[OP_REQUIRE] = pp_require_safe;
+	/* prevent (any more) unsafe opcodes being compiled */
+	PL_op_mask = plperl_opmask;
 
-		/* switch to the safe require opcode */
-		PL_ppaddr[OP_REQUIRE] = pp_require_safe;
-		PL_op_mask = plperl_opmask;
-
-		if (plperl_on_plperl_init && *plperl_on_plperl_init)
-		{
-			eval_pv(plperl_on_plperl_init, FALSE);
-			if (SvTRUE(ERRSV))
-				ereport(ERROR,
-						(errmsg("%s", strip_trailing_ws(SvPV_nolen(ERRSV))),
-						errcontext("While executing plperl.on_plperl_init.")));
-		}
-
+	if (plperl_on_plperl_init && *plperl_on_plperl_init)
+	{
+		eval_pv(plperl_on_plperl_init, FALSE);
+		if (SvTRUE(ERRSV))
+			ereport(ERROR,
+					(errmsg("%s", strip_trailing_ws(SvPV_nolen(ERRSV))),
+					errcontext("While executing plperl.on_plperl_init.")));
 	}
 }
 
@@ -1249,7 +1232,6 @@ plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 	HV		   *pragma_hv = newHV();
 	SV		   *subref = NULL;
 	int			count;
-	SV   	   *compile_sub;
 
 	sprintf(subname, "%s__%u", prodesc->proname, fn_oid);
 
@@ -1271,24 +1253,18 @@ plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 	 * errors properly.  Perhaps it's because there's another level of eval
 	 * inside mksafefunc?
 	 */
-	compile_sub = (trusted)
-		? newSVstring("PostgreSQL::InServer::safe::mksafefunc")
-		: *hv_fetch(PL_modglobal, "mkfunc", 6, 0);
-	compile_sub = *hv_fetch(PL_modglobal, "mkfunc", 6, 0);
-	count = perl_call_sv(compile_sub, G_SCALAR | G_EVAL | G_KEEPERR);
+	count = perl_call_sv( *hv_fetch(PL_modglobal, "mkfunc", 6, 0),
+				G_SCALAR | G_EVAL | G_KEEPERR);
 
 	SPAGAIN;
 
 	if (count == 1)
 	{
-		GV		   *sub_glob = (GV *) POPs;
+		SV		   *sub_rv = (SV *) POPs;
 
-		if (sub_glob && SvTYPE(sub_glob) == SVt_PVGV)
+		if (sub_rv && SvROK(sub_rv) && SvTYPE(SvRV(sub_rv)) == SVt_PVCV)
 		{
-			SV		   *sv = (SV *) GvCVu((GV *) sub_glob);
-
-			if (sv)
-				subref = newRV_inc(sv);
+			subref = newRV_inc(SvRV(sub_rv));
 		}
 	}
 
@@ -1303,10 +1279,13 @@ plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 
 	if (!subref)
 		ereport(ERROR,
-				(errmsg("didn't get a GLOB from compiling %s",
+				(errmsg("didn't get a CODE ref from compiling %s",
 						prodesc->proname)));
 
-	prodesc->reference = newSVsv(subref);
+	CvGV(SvRV(subref)) = (GV *) newSV(0);
+	gv_init(CvGV(SvRV(subref)), PL_defstash, subname, strlen(subname), TRUE);
+
+	prodesc->reference = subref;
 
 	return;
 }

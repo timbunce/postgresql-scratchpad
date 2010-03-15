@@ -25,21 +25,6 @@ sub plperl_die {
 }
 $SIG{__DIE__} = \&plperl_die;
 
-sub mkfuncsrc {
-	my ($name, $imports, $prolog, $src) = @_;
-
-	my $BEGIN = join "\n", map {
-		my $names = $imports->{$_} || [];
-		"$_->import(qw(@$names));"
-	} sort keys %$imports;
-	$BEGIN &&= "BEGIN { $BEGIN }";
-
-	$name =~ s/\\/\\\\/g;
-	$name =~ s/::|'/_/g; # avoid package delimiters
-
-	return qq[ package main; undef *{'$name'}; *{'$name'} = sub { $BEGIN $prolog $src } ];
-}
-
 sub ::encode_array_literal {
 	my ($arg, $delim) = @_;
 	return $arg
@@ -77,24 +62,22 @@ sub ::encode_array_constructor {
 return {
 	mkfunc => sub {
 
-		my $mkfuncsrc = sub {
-			my ($name, $imports, $prolog, $src) = @_;
+		my ($name, $imports, $prolog, $src) = @_;
 
-			my $BEGIN = join "\n", map {
-				my $names = $imports->{$_} || [];
-				"$_->import(qw(@$names));"
-			} sort keys %$imports;
-			$BEGIN &&= "BEGIN { $BEGIN }";
+		my $BEGIN = join "\n", map {
+			my $names = $imports->{$_} || [];
+			"$_->import(qw(@$names));"
+		} sort keys %$imports;
+		$BEGIN &&= "BEGIN { $BEGIN }";
 
-			$name =~ s/\\/\\\\/g;
-			$name =~ s/::|'/_/g; # avoid package delimiters
+		$name =~ s/\\/\\\\/g;
+		$name =~ s/::|'/_/g; # avoid package delimiters
 
-			return qq[ package main; undef *{'$name'}; *{'$name'} = sub { $BEGIN $prolog $src } ];
-		};
+		my $code = qq[ package main; sub { $BEGIN $prolog $src } ];
 
 		no strict;   # default to no strict for the eval
 		no warnings; # default to no warnings for the eval
-		my $ret = eval($mkfuncsrc->(@_));
+		my $ret = eval($code);
 		$@ =~ s/\(eval \d+\) //g if $@;
 		return $ret;
 	},
