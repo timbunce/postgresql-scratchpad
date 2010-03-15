@@ -46,6 +46,8 @@
 
 /* string literal macros defining chunks of perl code */
 #include "perlchunks.h"
+/* defines PLPERL_SET_OPMASK */
+#include "plperl_opmask.h"
 
 PG_MODULE_MAGIC;
 
@@ -143,7 +145,7 @@ static char *plperl_on_init = NULL;
 static char *plperl_on_plperl_init = NULL;
 static char *plperl_on_plperlu_init = NULL;
 static bool plperl_ending = false;
-static char *restricted_op_mask = NULL;
+static char *plperl_opmask = NULL;
 
 /* this is saved and restored by plperl_call_handler */
 static plperl_call_data *current_call_data = NULL;
@@ -297,8 +299,12 @@ _PG_init(void)
 									&hash_ctl,
 									HASH_ELEM);
 
+
 	plperl_held_interp = plperl_init_interp();
 	interp_state = INTERP_HELD;
+
+	Newz(0, plperl_opmask, PL_maxo, char);
+	PLPERL_SET_OPMASK(plperl_opmask);
 
 	inited = true;
 }
@@ -442,7 +448,7 @@ restore_context(bool trusted)
 			{
 				PERL_SET_CONTEXT(plperl_trusted_interp);
 				PL_ppaddr[OP_REQUIRE] = pp_require_safe;
-				PL_op_mask = restricted_op_mask;
+				PL_op_mask = plperl_opmask;
 			}
 			else
 			{
@@ -552,10 +558,6 @@ plperl_init_interp(void)
 		pp_require_orig = PL_ppaddr[OP_REQUIRE];
 	else
 		PL_ppaddr[OP_REQUIRE] = pp_require_orig;
-	if (!restricted_op_mask) {
-		Newxz(restricted_op_mask, PL_maxo, char);
-		restricted_op_mask[OP_ENTEREVAL] = 1;
-	}
 
 	if (perl_parse(plperl, plperl_init_shared_libs,
 				   nargs, embedding, NULL) != 0)
@@ -586,6 +588,7 @@ plperl_init_interp(void)
 
 #ifdef WIN32
 
+	/* XXX security hole for plperl! */
 	eval_pv("use POSIX qw(locale_h);", TRUE);	/* croak on failure */
 
 	if (save_collate != NULL)
@@ -728,8 +731,7 @@ plperl_trusted_init(void)
 
 		/* switch to the safe require opcode */
 		PL_ppaddr[OP_REQUIRE] = pp_require_safe;
-		PL_op_mask = restricted_op_mask;
-/* XXX enable PL_op_mask */
+		PL_op_mask = plperl_opmask;
 
 		if (plperl_on_plperl_init && *plperl_on_plperl_init)
 		{
