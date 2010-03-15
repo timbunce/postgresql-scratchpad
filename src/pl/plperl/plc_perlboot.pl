@@ -33,9 +33,6 @@ sub mkfuncsrc {
 	} sort keys %$imports;
 	$BEGIN &&= "BEGIN { $BEGIN }";
 
-	$name =~ s/\\/\\\\/g;
-	$name =~ s/::|'/_/g; # avoid package delimiters
-
 	return qq[ package main; sub { $BEGIN $prolog $src } ];
 }
 
