@@ -721,22 +721,15 @@ plperl_trusted_init(void)
 
 		/* switch to the safe require opcode */
 		PL_ppaddr[OP_REQUIRE] = pp_require_safe;
+/* XXX enable PL_op_mask */
 
 		if (plperl_on_plperl_init && *plperl_on_plperl_init)
 		{
-			dSP;
-
-			PUSHMARK(SP);
-			XPUSHs(sv_2mortal(newSVstring(plperl_on_plperl_init)));
-			PUTBACK;
-
-			call_pv("PostgreSQL::InServer::safe::safe_eval", G_VOID);
-			SPAGAIN;
-
+			eval_pv(plperl_on_plperl_init, FALSE);
 			if (SvTRUE(ERRSV))
 				ereport(ERROR,
 						(errmsg("%s", strip_trailing_ws(SvPV_nolen(ERRSV))),
-					  errcontext("While executing plperl.on_plperl_init.")));
+						errcontext("While executing plperl.on_plperl_init.")));
 		}
 
 	}
@@ -1271,6 +1264,7 @@ plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 	compile_sub = (trusted)
 		? newSVstring("PostgreSQL::InServer::safe::mksafefunc")
 		: *hv_fetch(PL_modglobal, "mkfunc", 6, 0);
+	compile_sub = *hv_fetch(PL_modglobal, "mkfunc", 6, 0);
 	count = perl_call_sv(compile_sub, G_SCALAR | G_EVAL | G_KEEPERR);
 
 	SPAGAIN;

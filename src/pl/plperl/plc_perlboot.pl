@@ -13,6 +13,7 @@ use vars qw(%_SHARED);
 
 sub plperl_warn {
 	(my $msg = shift) =~ s/\(eval \d+\) //g;
+	CORE::dump() if $msg =~ /Use of uninitialized value in subroutine entry/;
 	chomp $msg;
 	&::elog(&::WARNING, $msg);
 }
@@ -91,7 +92,8 @@ return {
 			return qq[ package main; undef *{'$name'}; *{'$name'} = sub { $BEGIN $prolog $src } ];
 		};
 
-		no strict; # default to no strict for the eval
+		no strict;   # default to no strict for the eval
+		no warnings; # default to no warnings for the eval
 		my $ret = eval($mkfuncsrc->(@_));
 		$@ =~ s/\(eval \d+\) //g if $@;
 		return $ret;
