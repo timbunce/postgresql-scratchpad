@@ -1159,9 +1159,9 @@ plperl.on_init = 'use lib "/my/app"; use MyApp::PgInit;'
 </programlisting>
        </para>
        <para>
-	   Any modules loaded by <literal>plperl.on_init</>, either directly or
-	   indirectly, will be available for use by <literal>plperl</>.  This may
-	   create a security risk. To see what modules have been loaded you can use:
+       Any modules loaded by <literal>plperl.on_init</>, either directly or
+       indirectly, will be available for use by <literal>plperl</>.  This may
+       create a security risk. To see what modules have been loaded you can use:
 <programlisting>
 DO 'elog(WARNING, join "\n", sort keys %INC)' language plperl;
 </programlisting>
