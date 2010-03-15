@@ -54,7 +54,7 @@
  * details that we don't want plperl to be able to access.
  */
 #define PRIVATE_HASH_SV (*hv_fetch(PL_modglobal, "pg", 2, 1))
-#define PRIVATE_HASH_RV SvRV(PRIVATE_HASH_SV)
+#define PRIVATE_HASH    ((HV*)SvRV(PRIVATE_HASH_SV))
 
 PG_MODULE_MAGIC;
 
@@ -708,6 +708,12 @@ plperl_destroy_interp(PerlInterpreter **interp)
 static void
 plperl_trusted_init(void)
 {
+	eval_pv(PLC_SAFE_OK, FALSE);
+	if (SvTRUE(ERRSV))
+		ereport(ERROR,
+				(errmsg("%s", strip_trailing_ws(SvPV_nolen(ERRSV))),
+				errcontext("While executing PLC_SAFE_OK.")));
+
 	if (GetDatabaseEncoding() == PG_UTF8)
 	{
 		/*
@@ -1261,7 +1267,7 @@ plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 	 * errors properly.  Perhaps it's because there's another level of eval
 	 * inside mksafefunc?
 	 */
-	count = perl_call_sv( *hv_fetch(PRIVATE_HASH_RV, "plperl_mkfunc", 13, 0),
+	count = perl_call_sv( *hv_fetch(PRIVATE_HASH, "plperl_mkfunc", 13, 0),
 				G_SCALAR | G_EVAL | G_KEEPERR);
 
 	SPAGAIN;
@@ -1290,6 +1296,7 @@ plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 				(errmsg("didn't get a CODE ref from compiling %s",
 						prodesc->proname)));
 
+	/* give the subroutine a proper name in the main:: symbol table */
 	CvGV(SvRV(subref)) = (GV *) newSV(0);
 	gv_init(CvGV(SvRV(subref)), PL_defstash, subname, strlen(subname), TRUE);
 
