@@ -80,3 +80,7 @@ sub ::encode_array_constructor {
 	return "ARRAY[$res]";
 }
 
+return {
+	mkfuncsrc	 => \&mkfuncsrc,
+	mkunsafefunc => \&mkfuncsrc,
+};

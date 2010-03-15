@@ -462,8 +462,8 @@ plperl_init_interp(void)
 	PerlInterpreter *plperl;
 	static int	perl_sys_init_done;
 
-	static char *embedding[3 + 2] = {
-		"", "-e", PLC_PERLBOOT
+	static char *embedding[3] = {
+		"", "-e", "0",
 	};
 	int			nargs = 3;
 
@@ -508,12 +508,6 @@ plperl_init_interp(void)
 	loc = setlocale(LC_TIME, NULL);
 	save_time = loc ? pstrdup(loc) : NULL;
 #endif
-
-	if (plperl_on_init)
-	{
-		embedding[nargs++] = "-e";
-		embedding[nargs++] = plperl_on_init;
-	}
 
 	/****
 	 * The perl API docs state that PERL_SYS_INIT3 should be called before
@@ -566,6 +560,14 @@ plperl_init_interp(void)
 		ereport(ERROR,
 				(errmsg("%s", strip_trailing_ws(SvPV_nolen(ERRSV))),
 				 errcontext("While running perl initialization.")));
+
+	SV *funcs_rvhv = eval_pv(PLC_PERLBOOT, TRUE);
+	sv_dump(funcs_rvhv);
+
+	if (plperl_on_init)
+	{
+		eval_pv(plperl_on_init, TRUE);
+	}
 
 #ifdef WIN32
 
