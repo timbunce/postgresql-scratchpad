@@ -561,8 +561,17 @@ plperl_init_interp(void)
 				(errmsg("%s", strip_trailing_ws(SvPV_nolen(ERRSV))),
 				 errcontext("While running perl initialization.")));
 
+	/* initialize */
 	SV *funcs_rvhv = eval_pv(PLC_PERLBOOT, TRUE);
 	sv_dump(funcs_rvhv);
+	hv_iterinit(SvRV(funcs_rvhv));
+	SV		   *val;
+	char	   *key;
+	STRLEN		klen;
+	while ((val = hv_iternextsv(SvRV(funcs_rvhv), &key, &klen))) {
+		hv_store(PL_modglobal, key, klen, val, 0);
+	}
+	/* XXX discard funcs_rvhv */
 
 	if (plperl_on_init)
 	{
@@ -1256,7 +1265,7 @@ plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 	HV		   *pragma_hv = newHV();
 	SV		   *subref = NULL;
 	int			count;
-	char	   *compile_sub;
+	SV   	   *compile_sub;
 
 	sprintf(subname, "%s__%u", prodesc->proname, fn_oid);
 
@@ -1279,9 +1288,10 @@ plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 	 * inside mksafefunc?
 	 */
 	compile_sub = (trusted)
-		? "PostgreSQL::InServer::safe::mksafefunc"
-		: "PostgreSQL::InServer::mkunsafefunc";
-	count = perl_call_pv(compile_sub, G_SCALAR | G_EVAL | G_KEEPERR);
+		? newSVstring("PostgreSQL::InServer::safe::mksafefunc")
+		: *hv_fetch(PL_modglobal, "mkfunc", 6, 0);
+	count = perl_call_sv(compile_sub, G_SCALAR | G_EVAL | G_KEEPERR);
+
 	SPAGAIN;
 
 	if (count == 1)
@@ -1308,8 +1318,8 @@ plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 
 	if (!subref)
 		ereport(ERROR,
-				(errmsg("didn't get a GLOB from compiling %s via %s",
-						prodesc->proname, compile_sub)));
+				(errmsg("didn't get a GLOB from compiling %s",
+						prodesc->proname)));
 
 	prodesc->reference = newSVsv(subref);
 

@@ -81,6 +81,6 @@ sub ::encode_array_constructor {
 }
 
 return {
-	mkfuncsrc	 => \&mkfuncsrc,
-	mkunsafefunc => \&mkfuncsrc,
+#	mkfuncsrc	 => \&mkfuncsrc,
+	mkfunc => \&mkunsafefunc,
 };
