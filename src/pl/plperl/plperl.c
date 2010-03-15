@@ -49,13 +49,6 @@
 /* defines PLPERL_SET_OPMASK */
 #include "plperl_opmask.h"
 
-/* PL_modglobal is a private per-interpreter/per-thread hash that's
- * not visible to perl code. We use it to store some implementation
- * details that we don't want plperl to be able to access.
- */
-#define PRIVATE_HASH_SV (*hv_fetch(PL_modglobal, "pg", 2, 1))
-#define PRIVATE_HASH    ((HV*)SvRV(PRIVATE_HASH_SV))
-
 PG_MODULE_MAGIC;
 
 /**********************************************************************
@@ -474,7 +467,6 @@ plperl_init_interp(void)
 {
 	PerlInterpreter *plperl;
 	static int	perl_sys_init_done;
-	SV *private_sv;
 
 	static char *embedding[3 + 2] = {
 		"", "-e", PLC_PERLBOOT
@@ -497,6 +489,10 @@ plperl_init_interp(void)
 	 * It appears that we only need to do this on interpreter startup, and
 	 * subsequent calls to the interpreter don't mess with the locale
 	 * settings.
+	 *
+	 * We restore them using setlocale_perl(), defined below, so that Perl
+	 * doesn't have a different idea of the locale from Postgres.
+	 *
 	 */
 
 	char	   *loc;
@@ -582,18 +578,6 @@ plperl_init_interp(void)
 				(errmsg("%s", strip_trailing_ws(SvPV_nolen(ERRSV))),
 				 errcontext("While running perl initialization.")));
 
-	/* initialise PRIVATE_HASH from $PRIVATE set by PLC_PERLBOOT */
-	private_sv = get_sv("PostgreSQL::InServer::PRIVATE", GV_ADDWARN);
-	if (SvROK(private_sv) && SvTYPE(SvRV(private_sv)) == SVt_PVHV)
-	{
-		sv_setsv(PRIVATE_HASH_SV, newRV(SvRV(private_sv)));
-		sv_setsv(private_sv, &PL_sv_undef); /* hide our tracks from plperl */
-	}
-	else
-		ereport(ERROR,
-				(errmsg_internal("PRIVATE data not set"),
-				 errcontext("While running perl initialization.")));
-
 #ifdef PLPERL_RESTORE_LOCALE
 	PLPERL_RESTORE_LOCALE(LC_COLLATE,  save_collate);
 	PLPERL_RESTORE_LOCALE(LC_CTYPE,    save_ctype);
@@ -677,11 +661,11 @@ plperl_destroy_interp(PerlInterpreter **interp)
 static void
 plperl_trusted_init(void)
 {
-	eval_pv(PLC_SAFE_OK, FALSE);
+	eval_pv(PLC_TRUSTED, FALSE);
 	if (SvTRUE(ERRSV))
 		ereport(ERROR,
 				(errmsg("%s", strip_trailing_ws(SvPV_nolen(ERRSV))),
-				errcontext("While executing PLC_SAFE_OK.")));
+				errcontext("While executing PLC_TRUSTED.")));
 
 	if (GetDatabaseEncoding() == PG_UTF8)
 	{
@@ -697,10 +681,15 @@ plperl_trusted_init(void)
 						errcontext("While executing utf8fix.")));
 	}
 
+	/*
+	 * Lock down the interpreter
+	 */
 	/* switch to the safe require opcode */
 	PL_ppaddr[OP_REQUIRE] = pp_require_safe;
 	/* prevent (any more) unsafe opcodes being compiled */
 	PL_op_mask = plperl_opmask;
+	/* delete the DynaLoader:: namespace so extensions can't be loaded */
+	hv_clear(gv_stashpv("DynaLoader", GV_ADDWARN));
 
 	if (plperl_on_plperl_init && *plperl_on_plperl_init)
 	{
@@ -1236,9 +1225,8 @@ plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 	 * errors properly.  Perhaps it's because there's another level of eval
 	 * inside mksafefunc?
 	 */
-	count = perl_call_sv( *hv_fetch(PRIVATE_HASH, "plperl_mkfunc", 13, 0),
-				G_SCALAR | G_EVAL | G_KEEPERR);
-
+	count = perl_call_pv("PostgreSQL::InServer::mkfunc",
+						 G_SCALAR | G_EVAL | G_KEEPERR);
 	SPAGAIN;
 
 	if (count == 1)
@@ -1277,11 +1265,6 @@ plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 
 /**********************************************************************
  * plperl_init_shared_libs()		-
- *
- * We cannot use the DynaLoader directly to get at the Opcode
- * module (used by Safe.pm). So, we link Opcode into ourselves
- * and do the initialization behind perl's back.
- *
  **********************************************************************/
 
 static void

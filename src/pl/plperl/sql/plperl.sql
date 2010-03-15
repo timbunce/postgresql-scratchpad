@@ -368,7 +368,9 @@ DO $$
 $$ LANGUAGE plperl;
 
 -- check that restricted operations are rejected in a plperl DO block
-DO $$ eval "1+1"; $$ LANGUAGE plperl;
+DO $$ system("/nonesuch"); $$ LANGUAGE plperl;
+DO $$ qx("/nonesuch"); $$ LANGUAGE plperl;
+DO $$ open my $fh, "</nonesuch"; $$ LANGUAGE plperl;
 
 -- check that we can't "use" a module that's not been loaded already
 -- compile-time error: "Unable to load blib.pm into plperl"

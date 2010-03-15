@@ -24,6 +24,29 @@ sub plperl_die {
 }
 $SIG{__DIE__} = \&plperl_die;
 
+sub mkfuncsrc {
+	my ($name, $imports, $prolog, $src) = @_;
+
+	my $BEGIN = join "\n", map {
+		my $names = $imports->{$_} || [];
+		"$_->import(qw(@$names));"
+	} sort keys %$imports;
+	$BEGIN &&= "BEGIN { $BEGIN }";
+
+	$name =~ s/\\/\\\\/g;
+	$name =~ s/::|'/_/g; # avoid package delimiters
+
+	return qq[ package main; sub { $BEGIN $prolog $src } ];
+}
+
+sub mkfunc {
+	no strict;   # default to no strict for the eval
+	no warnings; # default to no warnings for the eval
+	my $ret = eval(mkfuncsrc(@_));
+	$@ =~ s/\(eval \d+\) //g if $@;
+	return $ret;
+}
+
 sub ::encode_array_literal {
 	my ($arg, $delim) = @_;
 	return $arg
@@ -57,28 +80,3 @@ sub ::encode_array_constructor {
 	return "ARRAY[$res]";
 }
 
-# A hash of private code refs that plperl code won't have access to.
-# The $PRIVATE variable is reset to undefined during initialization.
-our $PRIVATE = {
-	plperl_mkfunc => sub {
-
-		my ($name, $imports, $prolog, $src) = @_;
-
-		my $BEGIN = join "\n", map {
-			my $names = $imports->{$_} || [];
-			"$_->import(qw(@$names));"
-		} sort keys %$imports;
-		$BEGIN &&= "BEGIN { $BEGIN }";
-
-		$name =~ s/\\/\\\\/g;
-		$name =~ s/::|'/_/g; # avoid package delimiters
-
-		my $code = qq[ package main; sub { $BEGIN $prolog $src } ];
-
-		no strict;   # default to no strict for the eval
-		no warnings; # default to no warnings for the eval
-		my $ret = eval($code);
-		$@ =~ s/\(eval \d+\) //g if $@;
-		return $ret;
-	},
-};

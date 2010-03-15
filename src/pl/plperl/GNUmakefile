@@ -36,7 +36,7 @@ NAME = plperl
 
 OBJS = plperl.o SPI.o Util.o
 
-PERLCHUNKS = plc_perlboot.pl plc_safe_ok.pl
+PERLCHUNKS = plc_perlboot.pl plc_trusted.pl
 
 SHLIB_LINK = $(perl_embed_ldflags)
 
