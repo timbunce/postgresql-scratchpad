@@ -49,6 +49,13 @@
 /* defines PLPERL_SET_OPMASK */
 #include "plperl_opmask.h"
 
+/* PL_modglobal is a private per-interpreter/per-thread hash that's
+ * not visible to perl code. We use it to store some implementation
+ * details that we don't want plperl to be able to access.
+ */
+#define PRIVATE_HASH_SV (*hv_fetch(PL_modglobal, "pg", 2, 1))
+#define PRIVATE_HASH_RV SvRV(PRIVATE_HASH_SV)
+
 PG_MODULE_MAGIC;
 
 /**********************************************************************
@@ -467,8 +474,8 @@ plperl_init_interp(void)
 	PerlInterpreter *plperl;
 	static int	perl_sys_init_done;
 
-	static char *embedding[3] = {
-		"", "-e", "0",
+	static char *embedding[3 + 2] = {
+		"", "-e", PLC_PERLBOOT
 	};
 	int			nargs = 3;
 
@@ -513,6 +520,12 @@ plperl_init_interp(void)
 	loc = setlocale(LC_TIME, NULL);
 	save_time = loc ? pstrdup(loc) : NULL;
 #endif
+
+	if (plperl_on_init)
+	{
+		embedding[nargs++] = "-e";
+		embedding[nargs++] = plperl_on_init;
+	}
 
 	/****
 	 * The perl API docs state that PERL_SYS_INIT3 should be called before
@@ -566,21 +579,17 @@ plperl_init_interp(void)
 				(errmsg("%s", strip_trailing_ws(SvPV_nolen(ERRSV))),
 				 errcontext("While running perl initialization.")));
 
-	/* initialize */
-	SV *funcs_rvhv = eval_pv(PLC_PERLBOOT, TRUE);
-	hv_iterinit(SvRV(funcs_rvhv));
-	SV		   *val;
-	char	   *key;
-	STRLEN		klen;
-	while ((val = hv_iternextsv(SvRV(funcs_rvhv), &key, &klen))) {
-		hv_store(PL_modglobal, key, klen, val, 0);
-	}
-	/* XXX discard funcs_rvhv */
-
-	if (plperl_on_init)
+	/* initialise PRIVATE_HASH from $PRIVATE set by PLC_PERLBOOT */
+	SV *private_sv = get_sv("PostgreSQL::InServer::PRIVATE", GV_ADDWARN);
+	if (SvROK(private_sv) && SvTYPE(SvRV(private_sv)) == SVt_PVHV)
 	{
-		eval_pv(plperl_on_init, TRUE);
+		sv_setsv(PRIVATE_HASH_SV, newRV(SvRV(private_sv)));
+		sv_setsv(private_sv, &PL_sv_undef); /* hide our tracks from plperl */
 	}
+	else
+		ereport(ERROR,
+				(errmsg_internal("PRIVATE data not set"),
+				 errcontext("While running perl initialization.")));
 
 #ifdef WIN32
 
@@ -1227,7 +1236,6 @@ static void
 plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 {
 	dSP;
-	bool		trusted = prodesc->lanpltrusted;
 	char		subname[NAMEDATALEN + 40];
 	HV		   *pragma_hv = newHV();
 	SV		   *subref = NULL;
@@ -1253,7 +1261,7 @@ plperl_create_sub(plperl_proc_desc *prodesc, char *s, Oid fn_oid)
 	 * errors properly.  Perhaps it's because there's another level of eval
 	 * inside mksafefunc?
 	 */
-	count = perl_call_sv( *hv_fetch(PL_modglobal, "mkfunc", 6, 0),
+	count = perl_call_sv( *hv_fetch(PRIVATE_HASH_RV, "plperl_mkfunc", 13, 0),
 				G_SCALAR | G_EVAL | G_KEEPERR);
 
 	SPAGAIN;

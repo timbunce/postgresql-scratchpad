@@ -58,9 +58,10 @@ sub ::encode_array_constructor {
 	return "ARRAY[$res]";
 }
 
-# return a hash of private code refs that plperl code won't have access to
-return {
-	mkfunc => sub {
+# A hash of private code refs that plperl code won't have access to.
+# The $PRIVATE variable is reset to undefined during initialization.
+our $PRIVATE = {
+	plperl_mkfunc => sub {
 
 		my ($name, $imports, $prolog, $src) = @_;
 
