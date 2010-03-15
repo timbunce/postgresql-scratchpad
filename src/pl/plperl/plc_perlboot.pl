@@ -13,7 +13,6 @@ use vars qw(%_SHARED);
 
 sub plperl_warn {
 	(my $msg = shift) =~ s/\(eval \d+\) //g;
-	CORE::dump() if $msg =~ /Use of uninitialized value in subroutine entry/;
 	chomp $msg;
 	&::elog(&::WARNING, $msg);
 }

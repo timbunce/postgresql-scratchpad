@@ -190,6 +190,7 @@ static void plperl_inline_callback(void *arg);
 static char *strip_trailing_ws(const char *msg);
 static OP  *pp_require_safe(pTHX);
 static int	restore_context(bool);
+static char *setlocale_perl(int category, char *locale);
 
 /*
  * Convert an SV to char * and verify the encoding via pg_verifymbstr()
@@ -473,6 +474,7 @@ plperl_init_interp(void)
 {
 	PerlInterpreter *plperl;
 	static int	perl_sys_init_done;
+	SV *private_sv;
 
 	static char *embedding[3 + 2] = {
 		"", "-e", PLC_PERLBOOT
@@ -495,10 +497,6 @@ plperl_init_interp(void)
 	 * It appears that we only need to do this on interpreter startup, and
 	 * subsequent calls to the interpreter don't mess with the locale
 	 * settings.
-	 *
-	 * We restore them using Perl's POSIX::setlocale() function so that Perl
-	 * doesn't have a different idea of the locale from Postgres.
-	 *
 	 */
 
 	char	   *loc;
@@ -507,7 +505,6 @@ plperl_init_interp(void)
 			   *save_monetary,
 			   *save_numeric,
 			   *save_time;
-	char		buf[1024];
 
 	loc = setlocale(LC_COLLATE, NULL);
 	save_collate = loc ? pstrdup(loc) : NULL;
@@ -519,6 +516,12 @@ plperl_init_interp(void)
 	save_numeric = loc ? pstrdup(loc) : NULL;
 	loc = setlocale(LC_TIME, NULL);
 	save_time = loc ? pstrdup(loc) : NULL;
+
+#define PLPERL_RESTORE_LOCALE(name, saved) \
+	STMT_START { \
+		if (saved != NULL) { setlocale_perl(name, saved); pfree(saved); } \
+	} STMT_END
+
 #endif
 
 	if (plperl_on_init)
@@ -580,7 +583,7 @@ plperl_init_interp(void)
 				 errcontext("While running perl initialization.")));
 
 	/* initialise PRIVATE_HASH from $PRIVATE set by PLC_PERLBOOT */
-	SV *private_sv = get_sv("PostgreSQL::InServer::PRIVATE", GV_ADDWARN);
+	private_sv = get_sv("PostgreSQL::InServer::PRIVATE", GV_ADDWARN);
 	if (SvROK(private_sv) && SvTYPE(SvRV(private_sv)) == SVt_PVHV)
 	{
 		sv_setsv(PRIVATE_HASH_SV, newRV(SvRV(private_sv)));
@@ -591,46 +594,12 @@ plperl_init_interp(void)
 				(errmsg_internal("PRIVATE data not set"),
 				 errcontext("While running perl initialization.")));
 
-#ifdef WIN32
-
-	/* XXX security hole for plperl! */
-	eval_pv("use POSIX qw(locale_h);", TRUE);	/* croak on failure */
-
-	if (save_collate != NULL)
-	{
-		snprintf(buf, sizeof(buf), "setlocale(%s,'%s');",
-				 "LC_COLLATE", save_collate);
-		eval_pv(buf, TRUE);
-		pfree(save_collate);
-	}
-	if (save_ctype != NULL)
-	{
-		snprintf(buf, sizeof(buf), "setlocale(%s,'%s');",
-				 "LC_CTYPE", save_ctype);
-		eval_pv(buf, TRUE);
-		pfree(save_ctype);
-	}
-	if (save_monetary != NULL)
-	{
-		snprintf(buf, sizeof(buf), "setlocale(%s,'%s');",
-				 "LC_MONETARY", save_monetary);
-		eval_pv(buf, TRUE);
-		pfree(save_monetary);
-	}
-	if (save_numeric != NULL)
-	{
-		snprintf(buf, sizeof(buf), "setlocale(%s,'%s');",
-				 "LC_NUMERIC", save_numeric);
-		eval_pv(buf, TRUE);
-		pfree(save_numeric);
-	}
-	if (save_time != NULL)
-	{
-		snprintf(buf, sizeof(buf), "setlocale(%s,'%s');",
-				 "LC_TIME", save_time);
-		eval_pv(buf, TRUE);
-		pfree(save_time);
-	}
+#ifdef PLPERL_RESTORE_LOCALE
+	PLPERL_RESTORE_LOCALE(LC_COLLATE,  save_collate);
+	PLPERL_RESTORE_LOCALE(LC_CTYPE,    save_ctype);
+	PLPERL_RESTORE_LOCALE(LC_MONETARY, save_monetary);
+	PLPERL_RESTORE_LOCALE(LC_NUMERIC,  save_numeric);
+	PLPERL_RESTORE_LOCALE(LC_TIME,     save_time);
 #endif
 
 	return plperl;
@@ -3030,4 +2999,71 @@ static void
 plperl_inline_callback(void *arg)
 {
 	errcontext("PL/Perl anonymous code block");
+}
+
+
+/*
+ * Perl's own setlocal() copied from POSIX.xs
+ * (needed because of the calls to new_*())
+ */
+static char *
+setlocale_perl(int category, char *locale)
+{
+    char *RETVAL = setlocale(category, locale);
+    if (RETVAL) {
+#ifdef USE_LOCALE_CTYPE
+        if (category == LC_CTYPE
+#ifdef LC_ALL
+            || category == LC_ALL
+#endif
+            )
+        {
+            char *newctype;
+#ifdef LC_ALL
+            if (category == LC_ALL)
+                newctype = setlocale(LC_CTYPE, NULL);
+            else
+#endif
+                newctype = RETVAL;
+            new_ctype(newctype);
+        }
+#endif /* USE_LOCALE_CTYPE */
+#ifdef USE_LOCALE_COLLATE
+        if (category == LC_COLLATE
+#ifdef LC_ALL
+            || category == LC_ALL
+#endif
+            )
+        {
+            char *newcoll;
+#ifdef LC_ALL
+            if (category == LC_ALL)
+                newcoll = setlocale(LC_COLLATE, NULL);
+            else
+#endif
+                newcoll = RETVAL;
+            new_collate(newcoll);
+        }
+#endif /* USE_LOCALE_COLLATE */
+
+#ifdef USE_LOCALE_NUMERIC
+        if (category == LC_NUMERIC
+#ifdef LC_ALL
+            || category == LC_ALL
+#endif
+            )
+        {
+            char *newnum;
+#ifdef LC_ALL
+            if (category == LC_ALL)
+                newnum = setlocale(LC_NUMERIC, NULL);
+            else
+#endif
+                newnum = RETVAL;
+            new_numeric(newnum);
+        }
+#endif /* USE_LOCALE_NUMERIC */
+    }
+
+    return RETVAL;
 }

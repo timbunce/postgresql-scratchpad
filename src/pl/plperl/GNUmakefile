@@ -84,7 +84,7 @@ submake:
 	$(MAKE) -C $(top_builddir)/src/test/regress pg_regress$(X)
 
 clean distclean maintainer-clean: clean-lib
-	rm -f SPI.c Util.c $(OBJS) perlchunks.h safe_opcodes.h
+	rm -f SPI.c Util.c $(OBJS) perlchunks.h plperl_opmask.h
 	rm -rf results
 	rm -f regression.diffs regression.out
 
