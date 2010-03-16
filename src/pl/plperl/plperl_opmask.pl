@@ -22,7 +22,7 @@ my $allowed_opset = opset(
 	# require is safe because we redirect the opcode
 	# entereval is safe as the opmask is now permanently set
 	qw[require entereval],
-	# Disalow these opcodes that are in the :base_orig optag
+	# Disallow these opcodes that are in the :base_orig optag
 	# (included in :default) but aren't considered sufficiently safe
 	qw[!prtf !dbmopen !setpgrp !setpriority],
 );
