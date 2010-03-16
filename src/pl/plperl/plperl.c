@@ -661,6 +661,11 @@ plperl_destroy_interp(PerlInterpreter **interp)
 static void
 plperl_trusted_init(void)
 {
+	HV         *stash;
+	SV         *sv;
+	char       *key;
+	I32         klen;
+
 	eval_pv(PLC_TRUSTED, FALSE);
 	if (SvTRUE(ERRSV))
 		ereport(ERROR,
@@ -684,13 +689,31 @@ plperl_trusted_init(void)
 	/*
 	 * Lock down the interpreter
 	 */
+
 	/* switch to the safe require opcode */
 	PL_ppaddr[OP_REQUIRE] = pp_require_safe;
+
 	/* prevent (any more) unsafe opcodes being compiled */
 	PL_op_mask = plperl_opmask;
-	/* delete the DynaLoader:: namespace so extensions can't be loaded */
-	hv_clear(gv_stashpv("DynaLoader", GV_ADDWARN));
 
+	/* delete the DynaLoader:: namespace so extensions can't be loaded */
+	stash = gv_stashpv("DynaLoader", GV_ADDWARN);
+	hv_iterinit(stash);
+	while ((sv = hv_iternextsv(stash, &key, &klen))) {
+		if (!isGV_with_GP(sv) || !GvCV(sv))
+			continue;
+		SvREFCNT_dec(GvCV(sv)); /* free the CV */
+		GvCV(sv) = NULL;        /* prevent call via GV */
+	}
+	hv_clear(stash);
+
+	/* invalidate assorted caches */
+	++PL_sub_generation;
+	hv_clear(PL_stashcache);
+
+	/*
+	 * Execute plperl.on_plperl_init in the locked-down interpreter
+	 */
 	if (plperl_on_plperl_init && *plperl_on_plperl_init)
 	{
 		eval_pv(plperl_on_plperl_init, FALSE);
