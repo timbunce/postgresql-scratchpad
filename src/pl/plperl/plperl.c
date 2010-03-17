@@ -567,6 +567,16 @@ plperl_init_interp(void)
 	else
 		PL_ppaddr[OP_REQUIRE] = pp_require_orig;
 
+#ifdef PLPERL_ENABLE_OPMASK_EARLY
+	/*
+	 * For regression testing to prove that the PLC_PERLBOOT and PLC_TRUSTED
+	 * code doesn't even compile any unsafe ops. In future there may be a
+	 * valid need for them to do so, in which case this could be softened
+	 * (perhaps moved to plperl_trusted_init()) or removed.
+	 */
+	PL_op_mask = plperl_opmask;
+#endif
+
 	if (perl_parse(plperl, plperl_init_shared_libs,
 				   nargs, embedding, NULL) != 0)
 		ereport(ERROR,
