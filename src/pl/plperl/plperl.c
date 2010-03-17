@@ -145,7 +145,7 @@ static char *plperl_on_init = NULL;
 static char *plperl_on_plperl_init = NULL;
 static char *plperl_on_plperlu_init = NULL;
 static bool plperl_ending = false;
-static char *plperl_opmask = NULL;
+static char plperl_opmask[MAXO];
 
 /* this is saved and restored by plperl_call_handler */
 static plperl_call_data *current_call_data = NULL;
@@ -300,11 +300,10 @@ _PG_init(void)
 									&hash_ctl,
 									HASH_ELEM);
 
+	PLPERL_SET_OPMASK(plperl_opmask);
+
 	plperl_held_interp = plperl_init_interp();
 	interp_state = INTERP_HELD;
-
-	Newz(0, plperl_opmask, PL_maxo, char);
-	PLPERL_SET_OPMASK(plperl_opmask);
 
 	inited = true;
 }

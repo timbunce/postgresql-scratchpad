@@ -15,7 +15,7 @@ open my $fh, ">", "$plperl_opmask_tmp"
 	or die "Could not write to $plperl_opmask_tmp: $!";
 
 printf $fh "#define PLPERL_SET_OPMASK(opmask) \\\n";
-printf $fh "  memset(opmask, 1, PL_maxo);\t/* disable all */ \\\n";
+printf $fh "  memset(opmask, 1, MAXO);\t/* disable all */ \\\n";
 printf $fh "  /* then allow some... */                       \\\n";
 
 my @allowed_ops = (
