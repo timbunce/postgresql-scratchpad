@@ -232,7 +232,13 @@ perm_fmgr_info(Oid functionId, FmgrInfo *finfo)
 void
 _PG_init(void)
 {
-	/* Be sure we do initialization only once (should be redundant now) */
+	/*
+	 * Be sure we do initialization only once.
+	 *
+	 * If initialization fails due to, e.g., plperl_init_interp() throwing an
+	 * exception, then we'll return here on the next usage and the user will
+	 * get a rather cryptic: ERROR:  attempt to redefine parameter "plperl.use_strict"
+	 */
 	static bool inited = false;
 	HASHCTL		hash_ctl;
 
