@@ -25,14 +25,14 @@ my @allowed_ops = (
 	# entereval is safe as the opmask is now permanently set
 	# caller is safe because the entire interpreter is locked down
 	qw[require entereval caller],
-	# print and dofile are needed for utf8_heavy.pl
-	# print is safe because the only available filehandles are STDIN/OUT/ERR
-	#	and STDIN is closed and STDOUT is a dup of STDERR.
+	# These are needed for utf8_heavy.pl:
 	# dofile is safe because we redirect the opcode like require above
-	qw[dofile],
+	# print is safe because the only writable filehandles are STDOUT & STDERR
+	# prtf (printf) is safe as it's the same as print + sprintf
+	qw[dofile print prtf],
 	# Disallow these opcodes that are in the :base_orig optag
 	# (included in :default) but aren't considered sufficiently safe
-	qw[!prtf !dbmopen !setpgrp !setpriority],
+	qw[!dbmopen !setpgrp !setpriority],
 	# custom is not deemed a likely security risk as it can't be generated from
 	# perl so would only be seen if the DBA had chosen to load a module that
 	# used it. Even then it's unlikely to be seen because it's typically
