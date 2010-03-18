@@ -25,6 +25,11 @@ my @allowed_ops = (
 	# entereval is safe as the opmask is now permanently set
 	# caller is safe because the entire interpreter is locked down
 	qw[require entereval caller],
+	# print and dofile are needed for utf8_heavy.pl
+	# print is safe because the only available filehandles are STDIN/OUT/ERR
+	#	and STDIN is closed and STDOUT is a dup of STDERR.
+	# dofile is safe because we redirect the opcode like require above
+	qw[dofile],
 	# Disallow these opcodes that are in the :base_orig optag
 	# (included in :default) but aren't considered sufficiently safe
 	qw[!prtf !dbmopen !setpgrp !setpriority],

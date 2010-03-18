@@ -576,6 +576,11 @@ CONTEXT:  PL/Perl anonymous code block
 DO $$ eval q{chdir '.'}; warn "Caught: $@"; $$ LANGUAGE plperl;
 WARNING:  Caught: 'chdir' trapped by operation mask at line 2.
 CONTEXT:  PL/Perl anonymous code block
+-- check that compiling do (dofile opcode) is allowed
+-- but that executing it for a file not already loaded (via require) dies
+DO $$ warn do "/dev/null"; $$ LANGUAGE plperl;
+ERROR:  Unable to load /dev/null into plperl at line 1.
+CONTEXT:  PL/Perl anonymous code block
 -- check that we can't "use" a module that's not been loaded already
 -- compile-time error: "Unable to load blib.pm into plperl"
 DO $$ use blib; $$ LANGUAGE plperl;

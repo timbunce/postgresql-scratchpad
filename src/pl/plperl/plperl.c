@@ -444,12 +444,14 @@ restore_context(bool trusted)
 			{
 				PERL_SET_CONTEXT(plperl_trusted_interp);
 				PL_ppaddr[OP_REQUIRE] = pp_require_safe;
+				PL_ppaddr[OP_DOFILE]  = pp_require_safe;
 				PL_op_mask = plperl_opmask;
 			}
 			else
 			{
 				PERL_SET_CONTEXT(plperl_untrusted_interp);
 				PL_ppaddr[OP_REQUIRE] = pp_require_orig;
+				PL_ppaddr[OP_DOFILE]  = pp_require_orig;
 				PL_op_mask = NULL;
 			}
 			trusted_context = trusted;
@@ -558,13 +560,15 @@ plperl_init_interp(void)
 	PL_exit_flags |= PERL_EXIT_DESTRUCT_END;
 
 	/*
-	 * Record the original function for the 'require' opcode. Ensure it's used
-	 * for new interpreters.
+	 * Record the original function for the 'require' and 'dofile' opcodes.
+	 * (They share the same implementation.) Ensure it's used for new interpreters.
 	 */
 	if (!pp_require_orig)
 		pp_require_orig = PL_ppaddr[OP_REQUIRE];
-	else
+	else {
 		PL_ppaddr[OP_REQUIRE] = pp_require_orig;
+		PL_ppaddr[OP_DOFILE]  = pp_require_orig;
+	}
 
 #ifdef PLPERL_ENABLE_OPMASK_EARLY
 	/*
@@ -699,8 +703,9 @@ plperl_trusted_init(void)
 	 * Lock down the interpreter
 	 */
 
-	/* switch to the safe require opcode */
+	/* switch to the safe require/dofile opcode for future code */
 	PL_ppaddr[OP_REQUIRE] = pp_require_safe;
+	PL_ppaddr[OP_DOFILE]  = pp_require_safe;
 
 	/* prevent (any more) unsafe opcodes being compiled */
 	PL_op_mask = plperl_opmask;
